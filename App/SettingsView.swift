@@ -47,7 +47,7 @@ struct SettingsView: View {
                     Text("In the app runs the node without a tunnel, for the simulator. It is a separate device in the tailnet.")
                 }
 
-                if model.status.self != nil {
+                if model.status.me != nil {
                     Section {
                         Button("Sign out", role: .destructive) { confirmLogout = true }
                     }

@@ -116,7 +116,7 @@ struct CoreStatus: Codable, Equatable {
         var expensive: Bool
     }
     var state: String
-    var `self`: Node?
+    var me: Node?
     var peers: [Node]
     var health: [String]
     var authURL: String?
@@ -125,6 +125,10 @@ struct CoreStatus: Codable, Equatable {
     var counters: Counters?
     var lastPath: Path?
     var memory: Memory?
+
+    enum CodingKeys: String, CodingKey {
+        case state, me = "self", peers, health, authURL, tailnetName, uptimeSeconds, counters, lastPath, memory
+    }
 
     static let notRunning = CoreStatus(state: "NotRunning", peers: [], health: [])
 }
