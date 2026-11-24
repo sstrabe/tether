@@ -12,8 +12,8 @@ struct ContentView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(model.stateText).font(.headline)
-                            if let me = model.status.me {
-                                Text("\(me.shortName) · \(me.ips.first ?? "")")
+                            if let me = model.status.me, let ip = me.ips.first {
+                                Text("\(me.shortName) · \(ip)")
                                     .font(.subheadline).foregroundStyle(.secondary)
                                     .accessibilityIdentifier("self")
                             } else if let tn = model.status.tailnetName {
