@@ -13,7 +13,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     ENABLE_USER_SCRIPT_SANDBOXING: NO          # the Go build reads core/ and the Go caches
-    TETHER_GO_OUT: $(TARGET_TEMP_DIR)/libtether
+    TETHER_GO_OUT: $(BUILD_DIR)/libtether/$(PLATFORM_NAME)   # shared by all targets (the tests see the app's bridging header)
     LIBRARY_SEARCH_PATHS: $(TETHER_GO_OUT)
     HEADER_SEARCH_PATHS: $(TETHER_GO_OUT)
     SWIFT_OBJC_BRIDGING_HEADER: Shared/Tether-Bridging-Header.h
@@ -83,6 +83,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         OTHER_LDFLAGS: []
         SWIFT_OBJC_BRIDGING_HEADER: ""
+        # The app module's bridging header includes libtether.h; test compiles scan it too.
 schemes:
   Tether:
     build: { targets: { Tether: all, TetherTunnel: all } }
