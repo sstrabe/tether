@@ -1,0 +1,89 @@
+diff -ru a/net/netmon/netmon.go b/net/netmon/netmon.go
+--- a/net/netmon/netmon.go	2026-11-24 13:03:40.981722959 +0100
++++ b/net/netmon/netmon.go	2026-11-24 13:03:41.215902974 +0100
+@@ -315,7 +315,7 @@
+ 		// MTU, etc.) should not trigger a major link change, as they cause
+ 		// false "major" events on macOS and Windows when the OS notifies us
+ 		// of interface changes that don't affect connectivity.
+-		if oldInterface.IsUp() != newInterface.IsUp() || !prefixesEqual(oldIps, newIps) {
++		if oldInterface.IsUp() != newInterface.IsUp() || ipsChanged(oldIps, newIps) {
+ 			return true
+ 		}
+ 	}
+@@ -348,7 +348,35 @@
+ 		oldIps = filterRoutableIPs(oldIps)
+ 
+ 		// Only consider routable IP changes and up/down state transitions.
+-		if newInterface.IsUp() != oldInterface.IsUp() || !prefixesEqual(oldIps, newIps) {
++		if newInterface.IsUp() != oldInterface.IsUp() || ipsChanged(oldIps, newIps) {
++			return true
++		}
++	}
++	return false
++}
++
++// IgnoreAddedIPs, when set, makes an interface that only gained addresses
++// (and kept all the ones it had) a minor change, not a major one. Mobile
++// networks hand out new temporary IPv6 addresses all day while the old ones
++// stay valid; treating each one as major made the engine rebind, re-apply
++// the VPN settings and re-check DERP every time. Set by the tether app.
++var IgnoreAddedIPs bool
++
++// ipsChanged reports whether the routable addresses changed in a way that
++// matters (see IgnoreAddedIPs).
++func ipsChanged(oldIps, newIps []netip.Prefix) bool {
++	if !IgnoreAddedIPs {
++		return !prefixesEqual(oldIps, newIps)
++	}
++	for _, o := range oldIps {
++		found := false
++		for _, n := range newIps {
++			if n == o {
++				found = true
++				break
++			}
++		}
++		if !found {
+ 			return true
+ 		}
+ 	}
+diff -ru a/wgengine/magicsock/derp.go b/wgengine/magicsock/derp.go
+--- a/wgengine/magicsock/derp.go	2026-11-24 13:03:41.043217109 +0100
++++ b/wgengine/magicsock/derp.go	2026-11-24 13:03:41.216038750 +0100
+@@ -912,6 +912,16 @@
+ // maybeCloseDERPsOnRebind, in response to a rebind, closes all
+ // DERP connections that don't have a local address in okayLocalIPs
+ // and pings all those that do.
++// DERPRebindPingTimeout and DERPRebindPingTries set how hard a rebind tries
++// to reach a DERP server before dropping the connection to it. A mobile
++// radio waking from idle can take longer than the upstream 3 seconds, and a
++// dropped DERP connection is a dropped tunnel for every relayed peer. Set by
++// the tether app.
++var (
++	DERPRebindPingTimeout = 3 * time.Second
++	DERPRebindPingTries   = 1
++)
++
+ func (c *Conn) maybeCloseDERPsOnRebind(okayLocalIPs []netip.Prefix) {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+@@ -927,9 +937,16 @@
+ 		}
+ 		dc := ad.c
+ 		go func() {
+-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+-			defer cancel()
+-			if err := dc.Ping(ctx); err != nil {
++			var err error
++			for try := 0; try < max(1, DERPRebindPingTries); try++ {
++				ctx, cancel := context.WithTimeout(context.Background(), DERPRebindPingTimeout)
++				err = dc.Ping(ctx)
++				cancel()
++				if err == nil {
++					break
++				}
++			}
++			if err != nil {
+ 				c.mu.Lock()
+ 				defer c.mu.Unlock()
+ 				c.closeOrReconnectDERPLocked(regionID, "rebind-ping-fail")

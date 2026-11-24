@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Go in a container for this repo (no Go on the laptop): ./dgo <cmd...> runs in core/.
+cd "$(dirname "$0")"
+exec docker run --rm --network host -v gomod:/go/pkg/mod -v gocache:/root/.cache/go-build \
+	-v "$PWD":/src -w /src/core -e GOFLAGS=-buildvcs=false golang:1.27 sh -c "$* ; rc=\$?; chown -R $(id -u):$(id -g) /src; exit \$rc"

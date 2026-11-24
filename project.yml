@@ -1,0 +1,89 @@
+# XcodeGen spec (the .xcodeproj is generated, not committed).
+# Two targets: the app (UI, VPN configuration, and an in-app engine for simulator tests) and the packet
+# tunnel extension that runs the node on the device. Both link libtether.a, the Go core (core/), built by
+# the "Go core" script phase for the SDK being built. The control server is never in here: it is a setting.
+name: Tether
+options:
+  bundleIdPrefix: dev.sstrabe
+  deploymentTarget: { iOS: "18.0" }
+settings:
+  base:
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO          # the Go build reads core/ and the Go caches
+    TETHER_GO_OUT: $(TARGET_TEMP_DIR)/libtether
+    LIBRARY_SEARCH_PATHS: $(TETHER_GO_OUT)
+    HEADER_SEARCH_PATHS: $(TETHER_GO_OUT)
+    SWIFT_OBJC_BRIDGING_HEADER: Shared/Tether-Bridging-Header.h
+    OTHER_LDFLAGS: [-ltether, -lresolv, -framework, Security, -framework, CoreFoundation]
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_BITCODE: NO
+targets:
+  Tether:
+    type: application
+    platform: iOS
+    sources: [App, Shared]
+    dependencies:
+      - target: TetherTunnel
+        embed: true
+    preBuildScripts:
+      - name: Go core
+        script: core/scripts/build-ios.sh "$TETHER_GO_OUT"
+        basedOnDependencyAnalysis: false
+    entitlements:
+      path: App/Tether.entitlements
+      properties:
+        com.apple.developer.networking.networkextension: [packet-tunnel-provider]
+        com.apple.security.application-groups: [group.dev.sstrabe.tether]
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Tether
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.sstrabe.tether
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+  TetherTunnel:
+    type: app-extension
+    platform: iOS
+    sources: [Tunnel, Shared]
+    preBuildScripts:
+      - name: Go core
+        script: core/scripts/build-ios.sh "$TETHER_GO_OUT"
+        basedOnDependencyAnalysis: false
+    entitlements:
+      path: Tunnel/TetherTunnel.entitlements
+      properties:
+        com.apple.developer.networking.networkextension: [packet-tunnel-provider]
+        com.apple.security.application-groups: [group.dev.sstrabe.tether]
+    info:
+      path: Tunnel/Info.plist
+      properties:
+        CFBundleDisplayName: Tether Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.sstrabe.tether.tunnel
+        GENERATE_INFOPLIST_FILE: NO
+  TetherTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [AppTests]
+    dependencies: [{ target: Tether }]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        OTHER_LDFLAGS: []
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+schemes:
+  Tether:
+    build: { targets: { Tether: all, TetherTunnel: all } }
+    test: { targets: [TetherTests] }

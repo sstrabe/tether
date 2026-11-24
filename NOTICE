@@ -1,0 +1,5 @@
+Tether is an unofficial client. It is not made by, endorsed by or affiliated with Tailscale Inc.
+
+The Go core builds on Tailscale's open-source client (https://github.com/tailscale/tailscale),
+Copyright (c) Tailscale Inc & contributors, BSD-3-Clause. core/patches/ holds changes to that code
+and is under the same license.

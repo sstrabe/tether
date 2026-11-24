@@ -1,0 +1,64 @@
+# Go core tests on Linux; simulator build + tests and an unsigned device build on GitHub's macOS
+# runners (free for public repos). The simulator app is kept as an artifact for agent-sim. Device
+# builds that get installed are signed on Sam's Mac through the appbuild MCP: no signing secrets here.
+name: build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults: { run: { working-directory: core } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: core/go.mod, cache-dependency-path: core/go.sum }
+      - run: ./scripts/tailscale-src.sh
+      - run: go vet -tags "$(cat build-tags.txt)" ./...
+      - run: go test -tags "$(cat build-tags.txt)" ./...
+      - run: GOOS=darwin GOARCH=arm64 go build -tags "$(cat build-tags.txt)" ./tether
+
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: core/go.mod, cache-dependency-path: core/go.sum }
+      - run: brew install xcodegen && xcodegen generate && mkdir -p build
+      - name: Pick a simulator
+        id: sim
+        run: |
+          id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys
+          d=json.load(sys.stdin)["devices"]
+          print(next(x["udid"] for r,v in sorted(d.items(), reverse=True) if "iOS" in r for x in v if x["name"].startswith("iPhone")))')
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Simulator build and tests
+        run: |
+          set -o pipefail
+          xcodebuild test -project Tether.xcodeproj -scheme Tether -destination "id=${{ steps.sim.outputs.id }}" \
+            -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/sim.log | grep -E "error:|warning: .*Tether|Test (Suite|Case)|passed|failed|\*\*" | tail -n 80
+      - name: Device build (unsigned, compile check)
+        run: |
+          set -o pipefail
+          xcodebuild build -project Tether.xcodeproj -scheme Tether -sdk iphoneos -configuration Release \
+            -derivedDataPath build/dd-device CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/device.log | grep -E "error:|\*\*" | tail -n 40
+      - name: Package the simulator app
+        if: always()
+        run: |
+          app=$(find build/dd/Build/Products -name Tether.app -path '*iphonesimulator*' | head -1)
+          [ -n "$app" ] && (cd "$(dirname "$app")" && zip -qry "$GITHUB_WORKSPACE/Tether-sim.zip" Tether.app) || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Tether-sim
+          path: Tether-sim.zip
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs
+          path: build/*.log
+          if-no-files-found: ignore
